@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/persistance"
+	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/util"
 )
 
 type Item struct {
@@ -15,42 +17,44 @@ type Item struct {
 	ExpiresAt time.Time
 }
 
-type AOFEntry struct {
-	Op        string
-	Key       string
-	Value     string
-	ExpiresAt time.Time
-}
-
 type Store struct {
-	items       map[string]Item
-	mu          sync.RWMutex
-	aofFile     *os.File
-	persistance Persistance
+	items               map[string]Item
+	mu                  sync.RWMutex
+	aofFile             *os.File
+	snapshotDir         string
+	aofPersistance      AOFPersistance
+	snapshotPersistance SnapshotPersistance
 }
 
-type Persistance interface {
-	AOFAppend(file *os.File, entry AOFEntry) error
+type AOFPersistance interface {
+	AOFAppend(file *os.File, entry persistance.AOFEntry) error
 }
 
-func New(aofPath string, persistence Persistance) (*Store, error) {
-	absPath, err := filepath.Abs(aofPath)
+type SnapshotPersistance interface {
+	SaveSnapshot(dir string, entries []persistance.SnapshotEntry) error
+	LoadSnapshot(dir string) ([]persistance.SnapshotEntry, error)
+}
+
+func New(aofPath string, snapshotPath string) (*Store, error) {
+	aofFile, err := util.OpenOrCreate(aofPath)
 	if err != nil {
 		return nil, err
 	}
-
-	f, err := os.OpenFile(absPath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	snapshotDir, err := util.MakeDirs(snapshotPath)
 	if err != nil {
 		return nil, err
 	}
-
 	store := Store{
-		items:       make(map[string]Item),
-		aofFile:     f,
-		persistance: persistence,
+		items:               make(map[string]Item),
+		aofFile:             aofFile,
+		snapshotDir:         snapshotDir,
+		aofPersistance:      persistance.NewAOFPersistance(),
+		snapshotPersistance: persistance.NewSnapshotPersistance(),
 	}
-	err = store.loadAOF()
-	if err != nil {
+	if err = store.LoadSnapshot(); err != nil {
+		return nil, err
+	}
+	if err = store.loadAOF(); err != nil {
 		return nil, err
 	}
 
@@ -77,9 +81,9 @@ func (s *Store) Set(key string, value string, ttlSeconds uint64, override bool) 
 		ExpiresAt: expiresAt,
 	}
 
-	if s.persistance != nil {
+	if s.aofPersistance != nil {
 		for range 5 {
-			err := s.persistance.AOFAppend(s.aofFile, AOFEntry{
+			err := s.aofPersistance.AOFAppend(s.aofFile, persistance.AOFEntry{
 				Op:        "set",
 				Key:       key,
 				Value:     value,
@@ -112,9 +116,9 @@ func (s *Store) Delete(key string) {
 	defer s.mu.Unlock()
 	delete(s.items, key)
 
-	if s.persistance != nil {
+	if s.aofPersistance != nil {
 		for range 5 {
-			err := s.persistance.AOFAppend(s.aofFile, AOFEntry{
+			err := s.aofPersistance.AOFAppend(s.aofFile, persistance.AOFEntry{
 				Op:  "delete",
 				Key: key,
 			})
@@ -132,13 +136,12 @@ func (s *Store) loadAOF() error {
 	}
 	scanner := bufio.NewScanner(s.aofFile)
 	for scanner.Scan() {
-		var entry AOFEntry
+		var entry persistance.AOFEntry
 		err := json.Unmarshal(scanner.Bytes(), &entry)
 		if err != nil {
 			return err
 		}
 
-		// Skip expired entries
 		if !entry.ExpiresAt.IsZero() && entry.ExpiresAt.Before(time.Now()) {
 			continue
 		}
@@ -155,6 +158,39 @@ func (s *Store) loadAOF() error {
 			s.mu.Lock()
 			delete(s.items, entry.Key)
 			s.mu.Unlock()
+		}
+	}
+	return nil
+}
+
+func (s *Store) SaveSnapshot() error {
+	entries := make([]persistance.SnapshotEntry, 0, len(s.items))
+	for k, v := range s.items {
+		entries = append(entries, persistance.SnapshotEntry{
+			Key:       k,
+			Value:     v.Value,
+			ExpiresAt: v.ExpiresAt,
+		})
+	}
+	return s.snapshotPersistance.SaveSnapshot(s.snapshotDir, entries)
+}
+
+func (s *Store) LoadSnapshot() error {
+	entries, err := s.snapshotPersistance.LoadSnapshot(s.snapshotDir)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, entry := range entries {
+		if !entry.ExpiresAt.IsZero() && entry.ExpiresAt.Before(time.Now()) {
+			continue
+		}
+
+		s.items[entry.Key] = Item{
+			Value:     entry.Value,
+			ExpiresAt: entry.ExpiresAt,
 		}
 	}
 	return nil
