@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package kvstore;
+
+option go_package = "github.com/oskarsmoczynski/Go-Key-Value-Store/proto/kvstore";
+
+service KVStore {
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+message SetRequest {
+  string key = 1;
+  string value = 2;
+  int64 ttl_seconds = 3;
+}
+
+message SetResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  bool found = 1;
+  string value = 2;
+  string error = 3;
+}
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteResponse {
+  bool success = 1;
+  string error = 2;
+}

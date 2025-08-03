@@ -18,7 +18,8 @@ Go-Key-Value-Store/
 │   └── util/            # Utility functions
 ├── proto/
 │   └── kvstore.proto    # gRPC service definitions
-└── scripts/             # Build and development scripts
+├── scripts/             # Build and development scripts
+└── utils/               # Global utilities
 ```
 
 ## Detailed Folder Responsibilities

@@ -1,0 +1,5 @@
+DEFAULT_TTL: 600 # 10 minutes
+SNAPSHOT_DIR: "snapshots"
+AOF_DIR: "aof"
+
+PORT: 50051
