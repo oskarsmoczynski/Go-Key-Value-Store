@@ -2,34 +2,47 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/api"
 	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/store"
 )
 
 func main() {
 	store_, err := store.New("../../aof/aof.log", "../../snapshots")
-
 	if err != nil {
-		panic(err)
+		fmt.Printf("Failed to initialize store: %v\n", err)
+		os.Exit(1)
 	}
-	store_.Set("test1", "val1", 0, false)
-	val, ok := store_.Get("test1")
-	if !ok {
-		fmt.Println("Get failed - expected success")
-	} else {
-		fmt.Println(val)
-	}
-    if err = store_.SaveSnapshot(); err != nil {
-        panic(err)
-    } else {
-        fmt.Println("Snapshot saved")
-    }
+	store_.InitBackgroundTasks()
 
-	store_.Delete("test1")
-	val, ok = store_.Get("test1")
-	if !ok {
-		fmt.Println("Get failed - expected fail")
-	} else {
-		fmt.Println(val)
-	}
+	grpcServer := api.NewGRPCServer(store_)
+
+	go func() {
+		if err := grpcServer.Start(50051); err != nil {
+			fmt.Printf("Failed to start gRPC server: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(10* time.Second)
+			store_.Set("test", "test", 10, false)
+		}
+	}()
+
+	fmt.Println("Key-Value Store gRPC server is running on port 50051")
+	fmt.Println("Press Ctrl+C to stop the server")
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("Shutting down server...")
+	grpcServer.Stop()
+	fmt.Println("Server stopped")
 }

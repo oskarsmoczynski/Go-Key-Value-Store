@@ -1,9 +1,7 @@
 package store
 
 import (
-	"bufio"
-	"encoding/json"
-	"io"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -28,6 +26,8 @@ type Store struct {
 
 type AOFPersistance interface {
 	AOFAppend(file *os.File, entry persistance.AOFEntry) error
+	LoadAOF(file *os.File) ([]persistance.AOFEntry, error)
+	ClearAOF(file *os.File) error
 }
 
 type SnapshotPersistance interface {
@@ -75,11 +75,11 @@ func (s *Store) Set(key string, value string, ttlSeconds uint64, override bool) 
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.items[key] = Item{
 		Value:     value,
 		ExpiresAt: expiresAt,
 	}
+	s.mu.Unlock()
 
 	if s.aofPersistance != nil {
 		for range 5 {
@@ -98,8 +98,8 @@ func (s *Store) Set(key string, value string, ttlSeconds uint64, override bool) 
 
 func (s *Store) Get(key string) (string, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	item, ok := s.items[key]
+	s.mu.RUnlock()
 
 	if !ok {
 		return "", false
@@ -113,8 +113,8 @@ func (s *Store) Get(key string) (string, bool) {
 
 func (s *Store) Delete(key string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.items, key)
+	s.mu.Unlock()
 
 	if s.aofPersistance != nil {
 		for range 5 {
@@ -130,34 +130,21 @@ func (s *Store) Delete(key string) {
 }
 
 func (s *Store) loadAOF() error {
-	_, err := s.aofFile.Seek(0, io.SeekStart)
+	entries, err := s.aofPersistance.LoadAOF(s.aofFile)
 	if err != nil {
 		return err
 	}
-	scanner := bufio.NewScanner(s.aofFile)
-	for scanner.Scan() {
-		var entry persistance.AOFEntry
-		err := json.Unmarshal(scanner.Bytes(), &entry)
-		if err != nil {
-			return err
-		}
-
-		if !entry.ExpiresAt.IsZero() && entry.ExpiresAt.Before(time.Now()) {
-			continue
-		}
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, entry := range entries {
 		switch entry.Op {
 		case "set":
-			s.mu.Lock()
 			s.items[entry.Key] = Item{
 				Value:     entry.Value,
 				ExpiresAt: entry.ExpiresAt,
 			}
-			s.mu.Unlock()
 		case "delete":
-			s.mu.Lock()
 			delete(s.items, entry.Key)
-			s.mu.Unlock()
 		}
 	}
 	return nil
@@ -172,7 +159,18 @@ func (s *Store) SaveSnapshot() error {
 			ExpiresAt: v.ExpiresAt,
 		})
 	}
-	return s.snapshotPersistance.SaveSnapshot(s.snapshotDir, entries)
+
+	if err := s.snapshotPersistance.SaveSnapshot(s.snapshotDir, entries); err != nil {
+		return err
+	}
+
+	if s.aofPersistance != nil {
+		if err := s.aofPersistance.ClearAOF(s.aofFile); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Store) LoadSnapshot() error {
@@ -194,4 +192,31 @@ func (s *Store) LoadSnapshot() error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) SaveSnapshotRegularly() {
+	for {
+		time.Sleep(30 * time.Second)
+		if err := s.SaveSnapshot(); err != nil {
+			fmt.Println("Error saving snapshot:", err)
+		}
+	}
+}
+
+func (s *Store) CleanExpiredItems() {
+	for {
+		time.Sleep(1 * time.Second)
+		s.mu.Lock()
+		for k, v := range s.items {
+			if !v.ExpiresAt.IsZero() && v.ExpiresAt.Before(time.Now()) {
+				delete(s.items, k)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+func (s *Store) InitBackgroundTasks() {
+	go s.SaveSnapshotRegularly()
+	go s.CleanExpiredItems()
 }

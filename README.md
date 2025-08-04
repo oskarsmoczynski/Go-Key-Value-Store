@@ -1,136 +1,219 @@
-# Go Key-Value Store with gRPC
+# Go Key-Value Store
 
-A high-performance, persistent key-value store implemented in Go with gRPC interface, featuring append-only logging and snapshot-based recovery.
+A high-performance, thread-safe key-value store written in Go with gRPC API, AOF persistence, and snapshot capabilities.
 
-## Project Structure
+## Features
+
+- **Thread-safe operations** with proper locking mechanisms
+- **TTL support** with automatic expiration cleanup
+- **Dual persistence strategy**: AOF (Append-Only File) + Snapshots
+- **gRPC API** for remote access
+- **Background tasks** for automatic snapshots and cleanup
+- **Graceful shutdown** handling
+
+## Architecture
 
 ```
-Go-Key-Value-Store/
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   gRPC Client   │    │   gRPC Server   │    │  Key-Value Store│
+│                 │◄──►│                 │◄──►│                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                       │
+                                                       ▼
+                                              ┌─────────────────┐
+                                              │   Persistence   │
+                                              │  AOF + Snapshots│
+                                              └─────────────────┘
+```
+
+## Quick Start
+
+### 1. Start the gRPC Server
+
+```bash
+# Navigate to the server directory
+cd cmd/server
+
+# Run the server
+go run main.go
+```
+
+The server will start on port 50051 and you'll see:
+```
+gRPC server starting on port 50051...
+Key-Value Store gRPC server is running on port 50051
+Press Ctrl+C to stop the server
+```
+
+### 2. Test with the gRPC Client
+
+In a new terminal:
+
+```bash
+# Navigate to the client directory
+cd cmd/client
+
+# Run the test client
+go run main.go
+```
+
+You should see output like:
+```
+Testing Set operation...
+Set response: Success=true, Error=
+
+Testing Get operation...
+Get response: Found=true, Value=test_value, Error=
+
+Testing Get for non-existent key...
+Get response: Found=false, Value=, Error=
+
+Testing Delete operation...
+Delete response: Success=true, Error=
+
+Verifying deletion...
+Get after delete: Found=false, Value=, Error=
+
+All tests completed successfully!
+```
+
+## API Reference
+
+### gRPC Methods
+
+#### Set
+```protobuf
+rpc Set(SetRequest) returns (SetResponse);
+
+message SetRequest {
+  string key = 1;
+  string value = 2;
+  int64 ttl_seconds = 3;  // 0 = no expiration
+}
+
+message SetResponse {
+  bool success = 1;
+  string error = 2;
+}
+```
+
+#### Get
+```protobuf
+rpc Get(GetRequest) returns (GetResponse);
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  bool found = 1;
+  string value = 2;
+  string error = 3;
+}
+```
+
+#### Delete
+```protobuf
+rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteResponse {
+  bool success = 1;
+  string error = 2;
+}
+```
+
+## Persistence Strategy
+
+### AOF (Append-Only File)
+- Logs every operation (Set/Delete) to `aof/aof.log`
+- Human-readable JSON format
+- Automatically cleared after successful snapshots
+
+### Snapshots
+- Full state snapshots saved to `snapshots/` directory
+- Binary format using Go's `gob` encoding
+- Automatically created every 30 seconds
+- Used for fast recovery on startup
+
+### Recovery Process
+1. Load the latest snapshot
+2. Replay any AOF entries since the snapshot
+3. Start serving requests
+
+## Background Tasks
+
+The server automatically runs two background goroutines:
+
+1. **Snapshot Creation**: Every 30 seconds
+2. **Expired Item Cleanup**: Every 1 second
+
+## Configuration
+
+Currently, the server uses hardcoded paths:
+- AOF file: `../../aof/aof.log`
+- Snapshots directory: `../../snapshots`
+- gRPC port: `50051`
+
+## Building
+
+```bash
+# Build the server
+go build -o kvstore-server cmd/server/main.go
+
+# Build the client
+go build -o kvstore-client cmd/client/main.go
+```
+
+## Dependencies
+
+- `google.golang.org/grpc` - gRPC framework
+- `google.golang.org/protobuf` - Protocol Buffers
+
+## Development
+
+### Regenerating gRPC Code
+
+If you modify the proto file, regenerate the Go code:
+
+```bash
+protoc --go_out=. --go-grpc_out=. proto/kvstore.proto
+```
+
+### Project Structure
+
+```
 ├── cmd/
-│   ├── client/          # gRPC client application
-│   └── server/
-│       └── main.go      # Server entry point
-├── configs/             # Configuration files
+│   ├── client/          # gRPC client for testing
+│   └── server/          # gRPC server main
 ├── pkg/
-│   ├── api/             # gRPC service handlers
-│   ├── persistence/     # Data persistence layer
-│   ├── store/           # Core KV store logic
+│   ├── api/             # gRPC server implementation
+│   ├── persistance/     # AOF and snapshot persistence
+│   ├── store/           # Core key-value store
 │   └── util/            # Utility functions
 ├── proto/
-│   └── kvstore.proto    # gRPC service definitions
-├── scripts/             # Build and development scripts
-└── utils/               # Global utilities
+│   ├── kvstore.proto    # Protocol buffer definitions
+│   └── kvstore/         # Generated Go code
+├── aof/                 # AOF log files
+└── snapshots/           # Snapshot files
 ```
 
-## Detailed Folder Responsibilities
+## Performance Characteristics
 
-### `cmd/server/main.go`
-- **Purpose**: Entry point for running the KV Store gRPC server
-- **Responsibilities**:
-  - Initialize the in-memory store
-  - Set up persistence layer (AOF + snapshots)
-  - Configure and start gRPC server
-  - Handle graceful shutdown
-  - Load initial state from persistence layer
+- **Thread-safe**: Uses `sync.RWMutex` for concurrent access
+- **Memory efficient**: Automatic cleanup of expired items
+- **Fast recovery**: Snapshot-based startup
+- **Durable**: Dual persistence ensures data safety
 
-### `cmd/client/`
-- **Purpose**: gRPC client application for testing and CLI operations
-- **Responsibilities**:
-  - Provide command-line interface for KV operations
-  - Connect to gRPC server
-  - Handle user input and display results
-  - Support batch operations and scripts
+## Future Enhancements
 
-### `pkg/api/`
-- **Purpose**: Implements gRPC Service Handlers
-- **Responsibilities**:
-  - Connect gRPC requests (SET, GET, DELETE) to the store module
-  - Handle request context, validation, and error responses
-  - Implement authentication/authorization (future)
-  - Manage request/response serialization
-  - Handle streaming operations (if needed)
-
-### `pkg/store/`
-- **Purpose**: Core in-memory KV store logic
-- **Responsibilities**:
-  - Manage the key-value data structure (map[string]Item or sync.Map)
-  - Handle TTL expirations and automatic key deletion
-  - Implement atomic operations and concurrency control
-  - Trigger persistence operations on state changes
-  - Manage memory usage and eviction policies
-  - Provide transaction support (future)
-
-### `pkg/persistence/`
-- **Purpose**: Data durability and recovery
-- **Responsibilities**:
-  - Implement Append-Only Log (AOF) writing and replay
-  - Handle periodic snapshotting (state dumps to disk)
-  - Rebuild state on startup from snapshot + AOF replay
-  - Ensure data durability across restarts
-  - Manage file rotation and cleanup
-  - Handle corruption detection and recovery
-
-### `pkg/util/`
-- **Purpose**: Shared utility functions
-- **Responsibilities**:
-  - Serialization (JSON, ProtoBuf, MsgPack)
-  - Safe file operations (atomic writes, safe renames)
-  - Timestamp conversions and TTL calculations
-  - Logging and metrics collection
-  - Configuration parsing and validation
-  - Error handling and retry logic
-
-### `proto/`
-- **Purpose**: gRPC service definitions
-- **Responsibilities**:
-  - Define service interfaces and message types
-  - Generate Go code with protoc
-  - Version control for API contracts
-  - Documentation of available operations
-
-### `scripts/`
-- **Purpose**: Build and development automation
-- **Responsibilities**:
-  - Compile protobuf files
-  - Build and package applications
-  - Run tests and benchmarks
-  - Development environment setup
-  - Deployment scripts
-
-### `configs/`
-- **Purpose**: Configuration management
-- **Responsibilities**:
-  - Server configuration (ports, timeouts)
-  - Persistence settings (AOF paths, snapshot intervals)
-  - Performance tuning parameters
-  - Environment-specific configurations
-
-## Data Flow
-
-### Startup Sequence
-1. **Load Configuration**: Read config files and environment variables
-2. **Initialize Persistence**: Set up AOF and snapshot directories
-3. **Load Snapshot**: Restore latest snapshot to in-memory store
-4. **Replay AOF**: Apply all operations since last snapshot
-5. **Start Background Tasks**: TTL checker, snapshot writer
-6. **Start gRPC Server**: Begin accepting client connections
-
-### Write Operations (SET/DELETE)
-1. **Validate Request**: Check key format, TTL, permissions
-2. **Modify In-Memory Store**: Update the key-value map atomically
-3. **Append to AOF**: Write operation to append-only log
-4. **Return Response**: Send success/error to client
-5. **Background Tasks**: Trigger snapshot if needed
-
-### Read Operations (GET)
-1. **Validate Request**: Check key format, permissions
-2. **Check TTL**: Verify key hasn't expired
-3. **Retrieve Value**: Read from in-memory store
-4. **Return Response**: Send value or "not found" to client
-
-### Background Tasks
-- **TTL Expiry Checker**: Periodic goroutine to remove expired keys
-- **Snapshot Writer**: Periodic state dumps to disk
-- **AOF Rotation**: Manage log file sizes and cleanup
-- **Health Monitoring**: Track performance metrics
+- [ ] Configuration management
+- [ ] Metrics and monitoring
+- [ ] HTTP REST API
+- [ ] Authentication and authorization
+- [ ] Clustering support
+- [ ] Backup and restore utilities
 

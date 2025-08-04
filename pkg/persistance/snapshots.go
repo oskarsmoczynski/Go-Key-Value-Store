@@ -2,12 +2,9 @@ package persistance
 
 import (
 	"encoding/gob"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
-    "strconv"
-    "strings"
 
 	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/util"
 )
@@ -25,52 +22,37 @@ func NewSnapshotPersistance() *SnapshotPersistance {
 }
 
 func (sp *SnapshotPersistance) SaveSnapshot(dir string, entries []SnapshotEntry) error {
-    timestamp := time.Now().Unix()
-    filename := makeFilename(timestamp)
-    path := filepath.Join(dir, filename)
-
-    file, err := util.OpenOrCreate(path)
+    tempFilename := "snapshot.tmp"
+    existingFilename := "snapshot.gob"
+    tempPath := filepath.Join(dir, tempFilename)
+    existingPath := filepath.Join(dir, existingFilename)
+    
+    file, err := util.OpenOrCreate(tempPath)
     if err != nil {
         return err
     }
-    defer file.Close()
-
+    
     encoder := gob.NewEncoder(file)
     if err := encoder.Encode(entries); err != nil {
         return err
     }
+    file.Close()
+
+    os.Remove(existingPath)
+    os.Rename(tempPath, existingPath)
+
     return nil
 }
 
 func (sp *SnapshotPersistance) LoadSnapshot(dir string) ([]SnapshotEntry, error) {
-    files, err := os.ReadDir(dir)
-    if err != nil {
-        return nil, err
-    }
-
-    maxTimestamp := int64(0)
-    for _, file := range files {
-        if file.IsDir() {
-            continue
-        }
-        parts := strings.Split(file.Name(), ".")
-        timestamp, err := strconv.ParseInt(parts[0], 10, 64)
-        if err != nil {
-            continue
-        }
-        if timestamp > maxTimestamp {
-            maxTimestamp = timestamp
-        }
-    }
-    if maxTimestamp == 0 {
-        return nil, nil
-    }
-
-    filename := makeFilename(maxTimestamp)
-    path := filepath.Join(dir, filename)
+    snapshotFilename := "snapshot.gob"
+    path := filepath.Join(dir, snapshotFilename)
 
     file, err := os.Open(path)
     if err != nil {
+        if os.IsNotExist(err) {
+            return []SnapshotEntry{}, nil
+        }
         return nil, err
     }
     defer file.Close()
@@ -82,8 +64,4 @@ func (sp *SnapshotPersistance) LoadSnapshot(dir string) ([]SnapshotEntry, error)
     }
 
     return entries, nil
-}
-
-func makeFilename(timestamp int64) string {
-    return fmt.Sprintf("%d.snapshot", timestamp)
 }
