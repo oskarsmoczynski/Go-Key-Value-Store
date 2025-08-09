@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/api"
 	"github.com/oskarsmoczynski/Go-Key-Value-Store/pkg/store"
@@ -25,13 +24,6 @@ func main() {
 		if err := grpcServer.Start(50051); err != nil {
 			fmt.Printf("Failed to start gRPC server: %v\n", err)
 			os.Exit(1)
-		}
-	}()
-
-	go func() {
-		for {
-			time.Sleep(10* time.Second)
-			store_.Set("test", "test", 10, false)
 		}
 	}()
 
