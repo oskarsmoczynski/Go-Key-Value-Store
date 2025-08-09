@@ -53,28 +53,14 @@ In a new terminal:
 # Navigate to the client directory
 cd cmd/client
 
-# Run the test client
-go run main.go
-```
+# To add entry in key-value store
+go run client.go set <key> <value> <ttl>
 
-You should see output like:
-```
-Testing Set operation...
-Set response: Success=true, Error=
+# To get key-value entry from store
+go run get <key>
 
-Testing Get operation...
-Get response: Found=true, Value=test_value, Error=
-
-Testing Get for non-existent key...
-Get response: Found=false, Value=, Error=
-
-Testing Delete operation...
-Delete response: Success=true, Error=
-
-Verifying deletion...
-Get after delete: Found=false, Value=, Error=
-
-All tests completed successfully!
+# To delete key-value entry from store
+go run delete <key>
 ```
 
 ## API Reference
@@ -165,7 +151,7 @@ Currently, the server uses hardcoded paths:
 go build -o kvstore-server cmd/server/main.go
 
 # Build the client
-go build -o kvstore-client cmd/client/main.go
+go build -o kvstore-client cmd/client/client.go
 ```
 
 ## Dependencies
@@ -210,10 +196,10 @@ protoc --go_out=. --go-grpc_out=. proto/kvstore.proto
 
 ## Future Enhancements
 
+- [ ] Handling all value types
 - [ ] Configuration management
-- [ ] Metrics and monitoring
-- [ ] HTTP REST API
 - [ ] Authentication and authorization
 - [ ] Clustering support
-- [ ] Backup and restore utilities
+- [ ] Metrics and monitoring
+- [ ] Listing all items in the store with ttl
 

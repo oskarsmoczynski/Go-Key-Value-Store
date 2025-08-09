@@ -17,12 +17,9 @@ const defaultAddr = "localhost:50051"
 
 func usage() {
 	fmt.Println("Usage:")
-	fmt.Println("  kvstore set <key> <value>")
+	fmt.Println("  kvstore set <key> <value> <ttl>")
 	fmt.Println("  kvstore get <key>")
 	fmt.Println("  kvstore delete <key>")
-	fmt.Println()
-	fmt.Println("Options:")
-	fmt.Println("  Set KVSTORE_ADDR env var (e.g. KVSTORE_ADDR=localhost:50051)")
 }
 
 func main() {
