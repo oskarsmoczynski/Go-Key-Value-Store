@@ -220,3 +220,14 @@ func (s *Store) InitBackgroundTasks() {
 	go s.SaveSnapshotRegularly()
 	go s.CleanExpiredItems()
 }
+
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.aofFile != nil {
+		err := s.aofFile.Close()
+		s.aofFile = nil
+		return err
+	}
+	return nil
+}
