@@ -45,7 +45,7 @@ Key-Value Store gRPC server is running on port 50051
 Press Ctrl+C to stop the server
 ```
 
-### 2. Test with the gRPC Client
+### 2. Use the gRPC Client (CLI)
 
 In a new terminal:
 
@@ -53,14 +53,14 @@ In a new terminal:
 # Navigate to the client directory
 cd cmd/client
 
-# To add entry in key-value store
+# Set a key (ttl in seconds)
 go run client.go set <key> <value> <ttl>
 
-# To get key-value entry from store
-go run get <key>
+# Get a key
+go run client.go get <key>
 
-# To delete key-value entry from store
-go run delete <key>
+# Delete a key
+go run client.go delete <key>
 ```
 
 ## API Reference
@@ -143,6 +143,20 @@ Currently, the server uses hardcoded paths:
 - AOF file: `../../aof/aof.log`
 - Snapshots directory: `../../snapshots`
 - gRPC port: `50051`
+
+The client can be configured via the `KVSTORE_ADDR` environment variable.
+
+## Testing
+
+Run the unit tests (no server needed):
+
+```bash
+go test ./tests -v
+```
+
+Notes:
+- Some lower-level persistence tests are skipped until test injection seams are added.
+- On Windows, file handles are properly closed during tests via `Store.Close()` to allow temp directory cleanup.
 
 ## Building
 
