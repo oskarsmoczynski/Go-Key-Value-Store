@@ -210,10 +210,11 @@ protoc --go_out=. --go-grpc_out=. proto/kvstore.proto
 
 ## Future Enhancements
 
+- [ ] Listing all items in the store with ttl
+- [ ] Persistant client application
 - [ ] Handling all value types
 - [ ] Configuration management
 - [ ] Authentication and authorization
 - [ ] Clustering support
 - [ ] Metrics and monitoring
-- [ ] Listing all items in the store with ttl
 
