@@ -38,6 +38,7 @@ func (sp *SnapshotPersistance) SaveSnapshot(dir string, entries []SnapshotEntry)
     }
     file.Close()
 
+    // Replace the old snapshot file with the new one
     os.Remove(existingPath)
     os.Rename(tempPath, existingPath)
 

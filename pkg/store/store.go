@@ -36,10 +36,13 @@ type SnapshotPersistance interface {
 }
 
 func New(aofPath string, snapshotPath string) (*Store, error) {
+	// Make sure that the file exists and open it
 	aofFile, err := util.OpenOrCreate(aofPath)
 	if err != nil {
 		return nil, err
 	}
+
+	// Make sure that the directory exists and create it if it doesn't
 	snapshotDir, err := util.MakeDirs(snapshotPath)
 	if err != nil {
 		return nil, err
@@ -51,9 +54,13 @@ func New(aofPath string, snapshotPath string) (*Store, error) {
 		aofPersistance:      persistance.NewAOFPersistance(),
 		snapshotPersistance: persistance.NewSnapshotPersistance(),
 	}
+
+	// Load the content of the snapshot file into memory
 	if err = store.LoadSnapshot(); err != nil {
 		return nil, err
 	}
+
+	// Load the content of the AOF file into memory
 	if err = store.loadAOF(); err != nil {
 		return nil, err
 	}
@@ -68,8 +75,9 @@ func (s *Store) Set(key string, value string, ttlSeconds uint64, override bool) 
 	}
 
 	if !override {
-		_, ok := s.Get(key)
-		if ok {
+		_, exists := s.Get(key)
+		if exists {
+			// If the item already exists, don't override it
 			return
 		}
 	}
@@ -82,6 +90,8 @@ func (s *Store) Set(key string, value string, ttlSeconds uint64, override bool) 
 	s.mu.Unlock()
 
 	if s.aofPersistance != nil {
+
+		// Retry if writing to the AOF file fails
 		for range 5 {
 			err := s.aofPersistance.AOFAppend(s.aofFile, persistance.AOFEntry{
 				Op:        "set",
@@ -117,6 +127,8 @@ func (s *Store) Delete(key string) {
 	s.mu.Unlock()
 
 	if s.aofPersistance != nil {
+
+		// Retry if writing to the AOF file fails
 		for range 5 {
 			err := s.aofPersistance.AOFAppend(s.aofFile, persistance.AOFEntry{
 				Op:  "delete",
@@ -164,6 +176,7 @@ func (s *Store) SaveSnapshot() error {
 		return err
 	}
 
+	// Clear content of the AOF file on successfull snapshot save
 	if s.aofPersistance != nil {
 		if err := s.aofPersistance.ClearAOF(s.aofFile); err != nil {
 			return err

@@ -5,6 +5,8 @@ import (
     "path/filepath"
 )
 
+// Creates a file and parent directories if they don't exist.
+// Returns a pointer to the file and an error if the file couldn't be created.
 func OpenOrCreate(path string) (*os.File, error) {
     absPath, err := filepath.Abs(path)
     if err != nil {

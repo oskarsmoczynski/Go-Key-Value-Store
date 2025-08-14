@@ -56,6 +56,8 @@ func (ap *AOFPersistance) LoadAOF(file *os.File) ([]AOFEntry, error) {
 
 func (ap *AOFPersistance) ClearAOF(file *os.File) error {
 	filePath := file.Name()
+	
+	// Truncating the file didn't work so here's a dirty hack around it
 	file.Close()
 	if err := os.Remove(filePath); err != nil {
 		return err
@@ -64,6 +66,9 @@ func (ap *AOFPersistance) ClearAOF(file *os.File) error {
 	if err != nil {
 		return err
 	}
+
+	// Replace the old pointer to the file with the new one.
+	// If I figure out how to truncate the file then that won't be needed.
 	*file = *newFile
 
 	return nil
